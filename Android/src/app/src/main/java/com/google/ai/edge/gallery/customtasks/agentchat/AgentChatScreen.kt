@@ -279,6 +279,38 @@ fun AgentChatScreen(
                 Log.d(TAG, "Start to run js")
                 chatViewJavascriptInterface.onResultListener = { result ->
                   Log.d(TAG, "Got result:\n$result")
+
+                  // --- ADDED: Intercept PDF from skill result and save it to MediaStore ---
+                  try {
+                    if (result.contains("pdf_base64")) {
+                      val jsonResult = JSONObject(result)
+                      if (jsonResult.has("pdf_base64")) {
+                        val base64Data = jsonResult.getString("pdf_base64")
+                        val decodedBytes = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT)
+                        val fileName = "skill_document_${System.currentTimeMillis()}.pdf"
+                        
+                        val contentValues = android.content.ContentValues().apply {
+                          put(android.provider.MediaStore.Downloads.DISPLAY_NAME, fileName)
+                          put(android.provider.MediaStore.Downloads.MIME_TYPE, "application/pdf")
+                          put(android.provider.MediaStore.Downloads.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS)
+                        }
+                        
+                        val uri = context.contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                        if (uri != null) {
+                          context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                            outputStream.write(decodedBytes)
+                          }
+                          launch(kotlinx.coroutines.Dispatchers.Main) {
+                            android.widget.Toast.makeText(context, "PDF guardado en Descargas", android.widget.Toast.LENGTH_SHORT).show()
+                          }
+                        }
+                      }
+                    }
+                  } catch (e: Exception) {
+                    Log.e(TAG, "Failed to parse and save pdf_base64: ${e.message}")
+                  }
+                  // -------------------------------------------------------------------------
+
                   action.result.complete(result)
                   val isSuccess = !result.contains("\"error\":")
                   val errorType = if (isSuccess) "" else "js_error"
