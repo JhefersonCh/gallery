@@ -40,7 +40,40 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.WebViewAssetLoader
 import com.google.ai.edge.gallery.common.LOCAL_URL_BASE
 import java.io.File
+import android.util.Base64
+import android.os.Environment
+import android.content.ContentValues
+import android.provider.MediaStore
+import android.widget.Toast
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import android.webkit.JavascriptInterface
 
+class GalleryDownloadInterface(private val context: Context) {
+  @JavascriptInterface
+  fun downloadBase64File(base64Data: String, fileName: String, mimeType: String) {
+    try {
+      val decodedBytes = Base64.decode(base64Data, Base64.DEFAULT)
+      val contentValues = ContentValues().apply {
+        put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+        put(MediaStore.Downloads.MIME_TYPE, mimeType)
+        put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+      }
+
+      val resolver = context.contentResolver
+      val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+      if (uri != null) {
+        resolver.openOutputStream(uri)?.use { it.write(decodedBytes) }
+        CoroutineScope(Dispatchers.Main).launch {
+          Toast.makeText(context, "Saved \$fileName to Downloads", Toast.LENGTH_SHORT).show()
+        }
+      }
+    } catch (e: Exception) {
+      Log.e("GalleryDownloadInterface", "Error saving file: \${e.message}")
+    }
+  }
+}
 private const val TAG = "AGGalleryWebView"
 private val iframeWrapper =
   """
@@ -156,6 +189,8 @@ fun GalleryWebView(
           allowFileAccess = true
           mediaPlaybackRequiresUserGesture = false
         }
+        
+        addJavascriptInterface(GalleryDownloadInterface(context), "AndroidDownloader")
 
         if (preventParentScrolling) {
           setOnTouchListener { v, event ->
